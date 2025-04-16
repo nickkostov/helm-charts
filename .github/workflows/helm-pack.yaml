@@ -1,0 +1,45 @@
+name: "Packing the Helm Chart"
+run-name: "Helm for ${{ inputs.chart }}"
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+        description: "The label (tag of the runner that you will be using)"
+      helm_docker_image:
+        required: true
+        type: string
+        description: "Docker Image with Helm"
+      chart_path:
+        required: true
+        type: string
+        description: "The name of the folder where you store your helm chart"
+      chart:
+        required: true
+        type: string
+        description: "Position (PATH) of the chart that you would like to lint"
+      semantic_version:
+        required: true
+        type: string # number?
+        description: "The Semantic Version of the Helm Chart"
+jobs:
+  publish:
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      packages: write
+      contents: read
+    container:
+      image: ${{ inputs.helm_docker_image }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: helm lint ${{ inputs.chart_path}}/${{ inputs.chart }}/
+      - name: "Helm Login to GitHub Package Registry"
+        run: |
+          echo ${{ secrets.GITHUB_TOKEN }} | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: "Helm Package ${{ inputs.chart }}"
+        run: |
+          helm package ${{ inputs.chart_path}}/${{ inputs.chart }}/ --version v${{ inputs.semantic_version }}
+      - name: "Helm Publish/Push ${{ inputs.chart }}"
+        run: |
+          helm push --debug ${{ inputs.chart }}-v${{ inputs.semantic_version }}.tgz oci://ghcr.io/${{ github.repository }}/helm-charts

@@ -1,0 +1,33 @@
+name: "Helm Publishing Workflow"
+on:
+  workflow_dispatch:
+   inputs:
+      chart:
+        description: 'Charts'
+        required: true
+        type: choice
+        options:
+          - service-a
+          - service-b
+          - service-c
+      semantic_version:
+        description: "Semantic Version x.x.x"
+        required: true
+        type: string
+
+run-name: "Packaging ${{ inputs.chart }}! Executed by @${{ github.actor }}"
+
+jobs:
+  publish:
+    name: "Calling Reusable Workflow for Publishing"
+    #uses: 'nickkostov/github-actions-reusable-workflows/.github/helmfile.yml@main'
+    uses: './.github/workflows/helm-pack.yaml'
+    ## if: github.event.pull_request.merged == true
+    ##
+    secrets: inherit
+    with:
+      runner: ubuntu-latest
+      helm_docker_image: ghcr.io/nickkostov/helm:v3.14.4.
+      chart_path: charts
+      chart: ${{ inputs.chart }}
+      semantic_version: ${{ inputs.semantic_version }}
