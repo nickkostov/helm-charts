@@ -1,0 +1,20 @@
+name: Docker Job
+run-name: "Docker Build and Push"
+on:
+  workflow_dispatch:
+
+jobs:
+  build-image:
+    name: Helm Image
+    uses: nickkostov/shared-actions/.github/workflows/build.yaml@master
+    permissions: # Explicitly set required permissions
+      contents: write
+      packages: write
+      actions: read
+    with:
+      tag: v3.14.4
+      custom: ""
+      runner: ubuntu-latest
+      image_name: helm
+      context: .
+      dockerfile-path: dockerfiles/Dockerfile

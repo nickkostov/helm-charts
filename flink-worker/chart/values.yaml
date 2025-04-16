@@ -1,0 +1,175 @@
+# Default values for the application.
+# Unspecified keys will fall back to the defaults defined here.
+nameOverride: ""
+fullnameOverride: ""
+namespace: ""
+nodeSelector: {}
+tolerations: []
+affinity: {}
+resources: {}
+
+env: "dev"
+
+flink:
+  s3bucket: "dummy-s3-bucket"
+  mysql:
+    enabled: true
+    smSecret: "dip-flink-jobs-data-eng-db"
+    userName: "dip_database"
+    host: "development-mysql.cluster-c94g0gow0quz.eu-west-1.rds.amazonaws.com"
+    port: 3306
+    dbName: "dip_database"
+    poolName: "nas-auth-acquirer-responded-db-pool"
+    poolSize: 5
+  flamegraph:
+    enabled: false
+
+  configuration:
+    # State backend
+    state.backend.type: rocksdb
+    state.backend.incremental: "true"
+    # Checkpointing
+    execution.checkpointing.interval: 30s
+    execution.checkpointing.min-pause: 15s
+    execution.checkpointing.timeout: 5min
+    execution.checkpointing.tolerable-failed-checkpoints: "3"
+    execution.checkpointing.mode: "EXACTLY_ONCE"
+    execution.checkpointing.max-concurrent-checkpoints: "1"
+    execution.checkpointing.unaligned.enabled: "true"
+    execution.checkpointing.aligned-checkpoint-timeout: 1s
+    # Memory Management
+    # JobManager - JVM Overhead
+    jobmanager.memory.jvm-overhead.fraction: 0.1
+    jobmanager.memory.jvm-overhead.min: "192mb"
+    jobmanager.memory.jvm-overhead.max: "1gb"
+    # TaskManager - Managed Memory
+    taskmanager.memory.managed.fraction: 0.4
+    # TaskManager - Network Memory
+    taskmanager.memory.network.fraction: 0.1
+    taskmanager.memory.network.min: "64mb"
+    # TaskManager - JVM Overhead
+    taskmanager.memory.jvm-overhead.fraction: 0.1
+    taskmanager.memory.jvm-overhead.min: "192mb"
+    taskmanager.memory.jvm-overhead.max: "1gb"
+    # External resources
+    external-resources: "none"
+    # Taskmanager - Task Slots
+    taskmanager.numberOfTaskSlots: "2"
+
+  logConfiguration:
+    # Log4j internal verbosity (for troubleshooting Log4j config)
+    status: INFO
+    # Root logger - Controls log level for all loggers not explicitly configured
+    rootLogger.level: INFO
+    rootLogger.appenderRef.console.ref: Console
+    # Console appender - Log to stdout in JSON format
+    appender.console.type: Console
+    appender.console.name: Console
+    appender.console.target: SYSTEM_OUT
+    # Compact JSON layout for structured logs
+    appender.console.layout.type: JsonLayout
+    appender.console.layout.complete: false
+    appender.console.layout.compact: true
+    appender.console.layout.eventEol: true
+    appender.console.layout.objectMessageAsJsonObject: true
+    appender.console.layout.properties: true
+    # Custom key-value pairs for structured logs
+    # time
+    appender.console.layout.keyValuePair1.type: KeyValuePair
+    appender.console.layout.keyValuePair1.key: time
+    appender.console.layout.keyValuePair1.value: $${date:yyyy-MM-dd'T'HH:mm:ss.SSSZ}
+    # merchant_id
+    appender.console.layout.keyValuePair2.type: KeyValuePair
+    appender.console.layout.keyValuePair2.key: merchant_id
+    appender.console.layout.keyValuePair2.value: '%X{merchant_id}'
+    # payment_reference_id
+    appender.console.layout.keyValuePair3.type: KeyValuePair
+    appender.console.layout.keyValuePair3.key: payment_reference_id
+    appender.console.layout.keyValuePair3.value: '%X{payment_reference_id}'
+    # ETL logger - Specific of the Flink worker
+    logger.etl.name: etl
+    logger.etl.level: INFO
+    logger.etl.additivity: true
+    logger.etl.appenderRef.console.ref: Console
+    # Log level for Kafka client
+    logger.kafka.name: org.apache.kafka
+    logger.kafka.level: INFO
+
+kafka:
+  broker: "broker-1.eu-west-1.amazonaws.com:9098,broker-2.eu-west-1.amazonaws:9098"
+  sourceTopicsList: [
+    "TOPIC.CDC.NAME.",
+    "TOPIC.CDC.NAME.",
+    "TOPIC.CDC.NAME",
+    "TOPIC.CDC.NAME"
+    ]
+  destTopic: "CDM.TOPIC.NAME"
+  errorTopic: "CDM.TOPIC.NAME"
+  groupId: "auth-v1"
+  cutOffRecords: "500"
+  startFromLatest: "true"
+
+image:
+  repository: ghcr.io/ORG/IMAGENAME
+  tag: "v0.0.1"
+
+imagePullSecrets:
+  - name: ghcr-io-auth
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+    eks.amazonaws.com/role-arn: arn:aws:iam::***************:role/ROLE_NAME
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: "flink-etl-nas-auth-acquirerresponded"
+
+serviceAccountSM:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+    eks.amazonaws.com/role-arn: arn:aws:iam::***************:role/ROLE_NAME
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: "flink-etl-test"
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: True
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: "/$1"
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  #example template. See more at https://nightlies.apache.org/flink/flink-kubernetes-operator-docs-main/docs/operations/ingress/#ingress
+  template: "flink.dev.domain.com/{{name}}(/|$)(.*)"
+
+autoscaling:
+  enabled: false
+  targetUtilizationBoundary: 0.1
+
+job:
+  args: ["-py", "/opt/etl/main.py"]
+  parallelism: 4
+  upgradeMode: savepoint
+
+flinkConfDir: /opt/etl/conf
+datadog:
+  labels:
+    jobmanager:
+      env: dev
+      #service: jobmanager
+    taskmanager:
+      env: dev
+      #service: taskmanager
+  metrics:
+    enabled: true
+    apiKeySecret: datadog-api-key

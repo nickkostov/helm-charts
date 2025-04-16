@@ -1,0 +1,226 @@
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  {{- if .Values.namespace -}}
+  namespace: {{ .Values.namespace }}
+  {{- end }}
+  name: {{ include "service.fullname" . }}
+spec:
+  image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+  flinkVersion: v1_18
+  podTemplate:
+    metadata:
+      annotations:
+        ad.datadoghq.com/flink-main-container.logs: '[{"source":"java"}]'
+        annotaitonis: "here"
+      labels: 
+        admission.datadoghq.com/enabled: "true"
+        labelis: "ishere"
+    spec:
+      containers:
+        - name: "flink-main-container"
+          env:
+              {{- if .Values.datadog.metrics.enabled }}
+            - name: DD_APIKEY
+              valueFrom:
+                secretKeyRef:
+                  name: externalsecret-datadog-{{ include "service.fullname" . }}
+                  key: apiKey
+              {{- end }}
+            - name: ENABLE_BUILT_IN_PLUGINS
+              value: flink-s3-fs-presto-1.18.1.jar;flink-s3-fs-hadoop-1.18.1.jar
+            - name: JAVA_TOOL_OPTIONS
+              value: "--add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED"
+            - name: KAFKA_BROKER
+              value: "{{ .Values.kafka.broker }}"
+            - name: KAFKA_SOURCE_TOPICS_LIST
+              value: "{{ join "," .Values.kafka.sourceTopicsList }}"
+            - name: KAFKA_DEST_TOPIC
+              value: "{{ .Values.kafka.destTopic }}"
+            - name: KAFKA_ERROR_TOPIC
+              value: "{{ .Values.kafka.errorTopic }}"
+            - name: KAFKA_GROUP_ID
+              value: "{{ .Values.kafka.groupId }}"
+            - name: ENV
+              value: {{ .Values.env | quote }}
+            - name: FLINK_ENV
+              value: {{ .Values.env | quote }}
+            - name: PARALLELISM
+              value: "{{ .Values.job.parallelism }}"
+              {{- if (.Values.flink.mysql.enabled) }}
+            - name: MYSQL_USERNAME
+              value: {{ .Values.flink.mysql.userName | default "dummy-user" | quote }}
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: externalsecret-mysql-{{ include "service.fullname" . }}
+                  key: password
+            - name: MYSQL_HOST
+              value: {{ .Values.flink.mysql.host | default "dummy-host" | quote }}
+            - name: MYSQL_PORT
+              value: "{{ .Values.flink.mysql.port }}"
+            - name: MYSQL_DBNAME
+              value: {{ .Values.flink.mysql.dbName | default "dummy-db-name" | quote }}
+            - name: MYSQL_POOL_NAME
+              value: "{{ .Values.flink.mysql.poolName }}"
+            - name: MYSQL_POOL_SIZE
+              value: "{{ .Values.flink.mysql.poolSize }}"
+              {{- end}}
+            - name: CUTOFF_POLL_RECORDS
+              value: "{{ .Values.kafka.cutOffRecords }}"
+            - name: KAFKA_START_FROM_LATEST
+              value: "{{ .Values.kafka.startFromLatest }}"
+            {{- if .Values.flinkConfDir }}
+            - name: FLINK_CONF_DIR
+              value: "{{ .Values.flinkConfDir }}"
+            {{- end}}
+            - name: DD_ENV
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tags.datadoghq.com/env']
+            - name: DD_SERVICE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tags.datadoghq.com/service']
+            - name: DD_VERSION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tags.datadoghq.com/version']
+            - name: DD_LOGS_INJECTION
+              value: "true"
+            - name: DD_RUNTIME_METRICS_ENABLED
+              value: "true"
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+  {{- with .Values.resources.jobManager }}
+  jobManager:
+    podTemplate:
+      metadata:
+        annotations:
+          ad.datadoghq.com/flink-main-container.logs: '[{"source":"java"}]'
+          ad.datadoghq.com/tags: '[{"component":"jobmanager"}]'
+          ad.datadoghq.com/flink-main-container.tags: '[{"component":"jobmanager"}]'
+          admission.datadoghq.com/java-lib.version: 'v1.47.3'
+        labels: 
+          admission.datadoghq.com/enabled: "true"
+
+    resource:
+      {{- toYaml . | nindent 6 }}
+  {{- end }}
+
+  {{- with .Values.resources.taskManager}}
+  taskManager:
+    podTemplate:
+      metadata:
+        annotations:
+          ad.datadoghq.com/flink-main-container.logs: '[{"source":"java"}]'
+          ad.datadoghq.com/tags: '[{"component":"taskmanager"}]'
+          ad.datadoghq.com/flink-main-container.tags: '[{"component":"taskmanager"}]'
+          admission.datadoghq.com/java-lib.version: 'v1.47.3'
+        labels: 
+          admission.datadoghq.com/enabled: "true"
+    resource:
+      {{- toYaml . | nindent 6 }}
+  {{- end }}
+
+  {{- if .Values.ingress.enabled }}
+  ingress:
+    template: {{ .Values.ingress.template }}
+    className: {{ .Values.ingress.className }}
+    {{- with .Values.ingress.annotations }}
+    annotations:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- end }}
+
+  flinkConfiguration:
+    {{- range $key, $value := .Values.flink.configuration }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+    state.checkpoints.dir: "{{ .Values.flink.s3bucket }}/checkpoints"
+    state.savepoints.dir: "{{ .Values.flink.s3bucket }}/savepoints"
+    high-availability.type: kubernetes
+    high-availability.storageDir: "{{ .Values.flink.s3bucket }}/ha"
+    rest.flamegraph.enabled: "{{ .Values.flink.flamegraph.enabled | default false }}"
+    fs.s3a.aws.credentials.provider: com.amazonaws.auth.WebIdentityTokenCredentialsProvider
+    kubernetes.operator.periodic.savepoint.interval: 2h
+    kubernetes.operator.savepoint.history.max.age: 24h
+    kubernetes.operator.savepoint.history.max.count: "5"
+    containerized.taskmanager.env.KAFKA_BROKER: "{{ .Values.kafka.broker }}"
+    containerized.taskmanager.env.KAFKA_SOURCE_TOPICS_LIST: "{{ join "," .Values.kafka.sourceTopicsList }}"
+    containerized.taskmanager.env.KAFKA_DEST_TOPIC: "{{ .Values.kafka.destTopic }}"
+    containerized.taskmanager.env.KAFKA_ERROR_TOPIC: "{{ .Values.kafka.errorTopic }}"
+    containerized.taskmanager.env.KAFKA_GROUP_ID: "{{ .Values.kafka.groupId}}"
+    containerized.taskmanager.env.ENV: {{ .Values.env | quote }}
+    containerized.taskmanager.env.FLINK_ENV: {{ .Values.env | quote }}
+    containerized.taskmanager.env.PARALLELISM: "{{ .Values.job.parallelism}}"
+    restart-strategy.type: fixed-delay
+    restart-strategy.fixed-delay.attempts: "3"
+    restart-strategy.fixed-delay.delay: 10s
+    kafka.request.timeout.ms: "60000"  # Increased timeout
+    kafka.retention.ms: "604800000"  # Test Retention timeout
+    kafka.retry.backoff.ms: "500"      # Retry backoff
+    kafka.max.poll.records: "{{ .Values.kafka.cutOffRecords }}"      # Max records per poll
+    fetch.min.bytes: "1"               # Minimum bytes fetched per request
+    fetch.max.bytes: "52428800"        # Maximum bytes fetched per request (50 MB)
+    fetch.max.wait.ms: "500"
+    reconnect.backoff.ms: "1000"
+    {{- if .Values.autoscaling.enabled }}
+    job.autoscaler.enabled: "true"
+    job.autoscaler.stabilization.interval: "1m"
+    job.autoscaler.metrics.window: "3m"
+    job.autoscaler.target.utilization.boundary: "{{ .Values.autoscaling.targetUtilizationBoundary }}"
+    {{- end }}
+    {{- if .Values.job}}
+    job.parallelism: "{{ .Values.job.parallelism }}"
+    job.upgradeMode: "{{ .Values.job.upgradeMode }}"
+    {{- end }}
+    flink.partition-discovery.interval-millis: "60000"
+    auto.create.topics.enable: "true"
+    web.exception-history-size: "50"
+    kubernetes.jobmanager.labels: {{ include "datadog-library.jobmanager-labels" . }}
+    kubernetes.taskmanager.labels: {{ include "datadog-library.taskmanager-labels" . }}
+    {{- if .Values.datadog.metrics.enabled }}    
+    metrics.reporter.dghttp.factory.class: org.apache.flink.metrics.datadog.DatadogHttpReporterFactory
+    metrics.reporter.dghttp.dataCenter: EU
+    metrics.reporter.dghttp.useLogicalIdentifier: "true"
+    metrics.scope.jm: flink.jobmanager
+    metrics.scope.jm-job: flink.jobmanager.job
+    metrics.scope.tm: flink.taskmanager
+    metrics.scope.tm-job: flink.taskmanager.job
+    metrics.scope.task: flink.task
+    metrics.scope.operator: flink.operator
+    metrics.reporter.dghttp.scope.variables.additional: {{ include "datadog-library.metric-tags" . | trimSuffix "," }} 
+{{/*
+### metrics.reporter.dghttp.scope.variables.additional: {{ include "metric-tags" . | trimSuffix "," }}
+*/}}
+
+    {{- end }}
+
+  logConfiguration:
+    "log4j-console.properties": |
+       {{- range $key, $value := .Values.flink.logConfiguration }}
+        {{ $key }} = {{ $value }}
+       {{- end }}
+
+  serviceAccount: {{ include "service.serviceAccountName" . }}
+
+  {{- with .Values.job }}
+  job:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
