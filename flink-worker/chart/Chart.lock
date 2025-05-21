@@ -1,0 +1,6 @@
+dependencies:
+- name: datadog-library
+  repository: file://../../library/datadog-library
+  version: 0.2.0
+digest: sha256:a951172a171eb24d071b8c593e399623640bfe22401836191cee87ad7bede425
+generated: "2025-05-21T12:18:38.67544443+03:00"
